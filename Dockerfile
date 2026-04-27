@@ -42,6 +42,13 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/s
   procps \
   # using backports for libreoffice 24.x (bookworm has 7.x)
   && apt-get -y install -t bookworm-backports libreoffice libreoffice-base libreoffice-common libreoffice-base-core \
+  && apt-get update && apt-get purge -y \
+    firebird3.0-common \
+    firebird3.0-common-doc \
+    firebird3.0-server-core \
+    firebird3.0-utils \
+  && apt-get autoremove -y \
+  && apt-get clean \
   && groupadd $NONPRIVGROUP \
   && useradd -m $NONPRIVUSER -g $NONPRIVGROUP \
   && rm -rf /var/lib/apt/lists/*

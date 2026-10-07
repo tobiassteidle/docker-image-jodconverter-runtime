@@ -52,19 +52,27 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/s
   && apt-get autoremove -y \
   && apt-get clean \
   # --- CVE-2026-71885: replace Debian Bouncy Castle 1.72 (transitive LibreOffice dep) with upstream 1.86 ---
-  # The scan reads the dpkg database, so the vulnerable debian packages must be purged (not just the jars
-  # overwritten). The upstream 1.86 jars are then dropped in under the unversioned names LibreOffice expects.
+  # The scan reads the dpkg database, so we must raise the recorded package version, not just swap the jar.
+  # Purging the packages is not an option: libitext-java (and other LibreOffice deps) depend on them, which
+  # breaks later apt operations. Instead we rebuild each libbc*-java as a minimal .deb at version 1.86-1 that
+  # ships the real upstream jar, then install it as an UPGRADE over 1.72-2 - this keeps all dependencies
+  # satisfied, bumps the dpkg version so the scan is clean, and provides functional Bouncy Castle 1.86.
   && BC_VERSION=1.86 \
   && BC_BASE=https://repo1.maven.org/maven2/org/bouncycastle \
-  && dpkg --purge --force-depends \
-    libbcmail-java libbcpkix-java libbcprov-java libbcutil-java \
-  && for art in bcprov bcpkix bcmail bcutil; do \
+  && mkdir -p /tmp/bcbuild \
+  && for pair in bcprov:libbcprov-java bcpkix:libbcpkix-java bcmail:libbcmail-java bcutil:libbcutil-java; do \
+       art="${pair%%:*}"; pkg="${pair##*:}"; \
        url="$BC_BASE/${art}-jdk18on/${BC_VERSION}/${art}-jdk18on-${BC_VERSION}.jar"; \
-       wget -q "$url"          -O "/usr/share/java/${art}.jar" && \
+       root="/tmp/bcbuild/$pkg"; \
+       mkdir -p "$root/DEBIAN" "$root/usr/share/java"; \
+       wget -q "$url"          -O "$root/usr/share/java/${art}.jar" && \
        wget -q "${url}.sha256" -O "/tmp/${art}.sha256" && \
-       echo "$(cat /tmp/${art}.sha256)  /usr/share/java/${art}.jar" | sha256sum -c - || exit 1; \
+       echo "$(cat /tmp/${art}.sha256)  $root/usr/share/java/${art}.jar" | sha256sum -c - && \
+       printf 'Package: %s\nVersion: %s-1\nArchitecture: all\nMaintainer: jodconverter base image\nSection: java\nPriority: optional\nDescription: Bouncy Castle %s (upstream jar, CVE-2026-71885 remediation)\n' "$pkg" "$BC_VERSION" "$BC_VERSION" > "$root/DEBIAN/control" && \
+       dpkg-deb --build --root-owner-group "$root" "/tmp/${pkg}.deb" || exit 1; \
      done \
-  && rm -f /tmp/*.sha256 \
+  && dpkg -i /tmp/libbcprov-java.deb /tmp/libbcpkix-java.deb /tmp/libbcmail-java.deb /tmp/libbcutil-java.deb \
+  && rm -rf /tmp/bcbuild /tmp/*.deb /tmp/*.sha256 \
   && groupadd $NONPRIVGROUP \
   && useradd -m $NONPRIVUSER -g $NONPRIVGROUP \
   && rm -rf /var/lib/apt/lists/*

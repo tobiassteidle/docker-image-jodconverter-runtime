@@ -38,6 +38,8 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/s
   && apt-get update && apt-get -y install \
   apt-transport-https locales-all libpng16-16 libxinerama1 libgl1-mesa-glx libfontconfig1 libfreetype6 libxrender1 \
   libxcb-shm0 libxcb-render0 adduser cpio findutils gosu \
+  # wget + ca-certificates needed to fetch the Bouncy Castle 1.86 jars (see CVE remediation below)
+  wget ca-certificates \
   # procps needed for us finding the libreoffice process, see https://github.com/sbraconnier/jodconverter/issues/127#issuecomment-463668183
   procps \
   # using backports for libreoffice 24.x (bookworm has 7.x)
@@ -49,6 +51,20 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/s
     firebird3.0-utils \
   && apt-get autoremove -y \
   && apt-get clean \
+  # --- CVE-2026-71885: replace Debian Bouncy Castle 1.72 (transitive LibreOffice dep) with upstream 1.86 ---
+  # The scan reads the dpkg database, so the vulnerable debian packages must be purged (not just the jars
+  # overwritten). The upstream 1.86 jars are then dropped in under the unversioned names LibreOffice expects.
+  && BC_VERSION=1.86 \
+  && BC_BASE=https://repo1.maven.org/maven2/org/bouncycastle \
+  && dpkg --purge --force-depends \
+    libbcmail-java libbcpkix-java libbcprov-java libbcutil-java \
+  && for art in bcprov bcpkix bcmail bcutil; do \
+       url="$BC_BASE/${art}-jdk18on/${BC_VERSION}/${art}-jdk18on-${BC_VERSION}.jar"; \
+       wget -q "$url"          -O "/usr/share/java/${art}.jar" && \
+       wget -q "${url}.sha256" -O "/tmp/${art}.sha256" && \
+       echo "$(cat /tmp/${art}.sha256)  /usr/share/java/${art}.jar" | sha256sum -c - || exit 1; \
+     done \
+  && rm -f /tmp/*.sha256 \
   && groupadd $NONPRIVGROUP \
   && useradd -m $NONPRIVUSER -g $NONPRIVGROUP \
   && rm -rf /var/lib/apt/lists/*

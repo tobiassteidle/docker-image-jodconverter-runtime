@@ -35,7 +35,8 @@ COPY --from=jresource /jre $JAVA_HOME
 
 # using backports for libreoffice 24.x (bookworm has 7.x)
 RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/sources.list.d/backports.list \
-  && apt-get update && apt-get -y install \
+  # upgrade packages of the base layer too, otherwise security fixes (e.g. libbrotli1) are never picked up
+  && apt-get update && apt-get -y upgrade && apt-get -y install \
   apt-transport-https locales-all libpng16-16 libxinerama1 libgl1-mesa-glx libfontconfig1 libfreetype6 libxrender1 \
   libxcb-shm0 libxcb-render0 adduser cpio findutils gosu \
   # wget + ca-certificates needed to fetch the Bouncy Castle 1.86 jars (see CVE remediation below)
@@ -51,6 +52,10 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' > /etc/apt/s
     firebird3.0-utils \
   && apt-get autoremove -y \
   && apt-get clean \
+  # --- CVE-2026-111497: libbrotli1 (loaded by soffice.bin) must be >= 1.0.9-2+deb12u1, fail the build otherwise ---
+  && BROTLI_VERSION="$(dpkg-query -W -f='${Version}' libbrotli1)" \
+  && { dpkg --compare-versions "$BROTLI_VERSION" ge 1.0.9-2+deb12u1 \
+       || { echo "libbrotli1 $BROTLI_VERSION is vulnerable (CVE-2026-111497)"; exit 1; }; } \
   # --- CVE-2026-71885: replace Debian Bouncy Castle 1.72 (transitive LibreOffice dep) with upstream 1.86 ---
   # The scan reads the dpkg database, so we must raise the recorded package version, not just swap the jar.
   # Purging the packages is not an option: libitext-java (and other LibreOffice deps) depend on them, which

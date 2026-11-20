@@ -16,7 +16,7 @@ ENV JAVA_MODULES=java.base,java.compiler,java.datatransfer,java.desktop,java.ins
 # "set -eux" prints every command and stops at the first failing one, so the failing step is visible in the build log
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends wget ca-certificates apt-transport-https; \
+    apt-get install -y --no-install-recommends wget ca-certificates apt-transport-https binutils; \
     mkdir -p /etc/apt/keyrings; \
     wget -O /etc/apt/keyrings/adoptium.asc https://packages.adoptium.net/artifactory/api/gpg/key/public; \
     echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main" > /etc/apt/sources.list.d/adoptium.list; \

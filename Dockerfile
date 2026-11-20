@@ -13,27 +13,31 @@ ARG JAVA_VERSION
 ARG JAVA_MIN_VERSION
 ENV JAVA_MODULES=java.base,java.compiler,java.datatransfer,java.desktop,java.instrument,java.logging,java.management,java.management.rmi,java.naming,java.net.http,java.prefs,java.rmi,java.scripting,java.se,java.security.jgss,java.security.sasl,java.smartcardio,java.sql,java.sql.rowset,java.transaction.xa,java.xml,java.xml.crypto,jdk.accessibility,jdk.charsets,jdk.crypto.cryptoki,jdk.crypto.ec,jdk.dynalink,jdk.httpserver,jdk.incubator.vector,jdk.internal.vm.ci,jdk.internal.vm.compiler,jdk.internal.vm.compiler.management,jdk.jdwp.agent,jdk.jfr,jdk.jsobject,jdk.localedata,jdk.management,jdk.management.agent,jdk.management.jfr,jdk.naming.dns,jdk.naming.rmi,jdk.net,jdk.nio.mapmode,jdk.sctp,jdk.security.auth,jdk.security.jgss,jdk.unsupported,jdk.xml.dom,jdk.zipfs
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget ca-certificates apt-transport-https \
-    && mkdir -p /etc/apt/keyrings \
-    && wget -qO /etc/apt/keyrings/adoptium.asc https://packages.adoptium.net/artifactory/api/gpg/key/public \
-    && echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main" > /etc/apt/sources.list.d/adoptium.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends temurin-${JAVA_VERSION}-jdk \
-    && JAVA_HOME_SRC="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")" \
-    && ln -s "$JAVA_HOME_SRC" /opt/jdk-src \
+# "set -eux" prints every command and stops at the first failing one, so the failing step is visible in the build log
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends wget ca-certificates apt-transport-https; \
+    mkdir -p /etc/apt/keyrings; \
+    wget -O /etc/apt/keyrings/adoptium.asc https://packages.adoptium.net/artifactory/api/gpg/key/public; \
+    echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main" > /etc/apt/sources.list.d/adoptium.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends temurin-${JAVA_VERSION}-jdk; \
+    JAVA_HOME_SRC="$(ls -d /usr/lib/jvm/temurin-${JAVA_VERSION}-jdk-* | head -n 1)"; \
+    ln -s "$JAVA_HOME_SRC" /opt/jdk-src; \
+    /opt/jdk-src/bin/java -version; \
     # --- CVE-2026-114938: fail the build if the installed Temurin is older than the fixed release ---
-    && JAVA_INSTALLED="$(/opt/jdk-src/bin/java -version 2>&1 | sed -n 's/.*version "\([0-9.]*\).*/\1/p' | head -n 1)" \
-    && { dpkg --compare-versions "$JAVA_INSTALLED" ge "$JAVA_MIN_VERSION" \
-         || { echo "Temurin $JAVA_INSTALLED is older than $JAVA_MIN_VERSION (CVE-2026-114938)"; exit 1; }; } \
-    && /opt/jdk-src/bin/jlink \
+    JAVA_INSTALLED="$(/opt/jdk-src/bin/java -version 2>&1 | sed -n 's/.*version "\([0-9.]*\).*/\1/p' | head -n 1)"; \
+    test -n "$JAVA_INSTALLED"; \
+    dpkg --compare-versions "$JAVA_INSTALLED" ge "$JAVA_MIN_VERSION" \
+      || { echo "Temurin $JAVA_INSTALLED is older than $JAVA_MIN_VERSION (CVE-2026-114938)"; exit 1; }; \
+    /opt/jdk-src/bin/jlink \
        --add-modules $JAVA_MODULES \
        --strip-debug \
        --no-man-pages \
        --no-header-files \
        --compress=2 \
-       --output /jre \
-    && rm -rf /var/lib/apt/lists/*
+       --output /jre; \
+    rm -rf /var/lib/apt/lists/*
 
 ############ JRE ############
 ARG TARGET_BASE_IMAGE
